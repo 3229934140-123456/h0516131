@@ -518,7 +518,7 @@ function renderSectionContent(
 }
 
 export default function ViewReportPage() {
-  const { publishId } = useParams();
+  const { publishId, id } = useParams();
   const navigate = useNavigate();
   const [showBackToTop, setShowBackToTop] = useState(false);
   const [activeSection, setActiveSection] = useState(0);
@@ -527,33 +527,60 @@ export default function ViewReportPage() {
   const projects = useAppStore((s) => s.projects);
   const sections = useAppStore((s) => s.sections);
   const templates = useAppStore((s) => s.templates);
-  const dataSources = useAppStore((s) => s.dataSources);
-  const currentUser = useAppStore((s) => s.currentUser);
+  const currentProjectId = useAppStore((s) => s.currentProjectId);
+  const loading = useAppStore((s) => s.loading);
+  const extractProjectIdFromPublishId = useAppStore((s) => s.extractProjectIdFromPublishId);
+  const getProjectDataSources = useAppStore((s) => s.getProjectDataSources);
   const setCurrentProject = useAppStore((s) => s.setCurrentProject);
+  const fetchProjects = useAppStore((s) => s.fetchProjects);
+  const fetchPublications = useAppStore((s) => s.fetchPublications);
 
-  const isPreviewMode = window.location.pathname.startsWith("/preview/");
+  const isPreviewMode = typeof window !== "undefined" && window.location.pathname.startsWith("/preview/");
+
+  const expectedProjectId = useMemo(() => {
+    if (isPreviewMode) return id || null;
+    const matchedPub = publications.find((p) => p.publishId === publishId);
+    if (matchedPub) return matchedPub.projectId;
+    if (publishId) {
+      const extracted = extractProjectIdFromPublishId(publishId);
+      if (extracted) {
+        if (projects.length === 0) return extracted;
+        if (projects.some((p) => p.id === extracted)) return extracted;
+      }
+    }
+    return null;
+  }, [isPreviewMode, id, publishId, publications, projects, extractProjectIdFromPublishId]);
+
+  const isProjectReady = currentProjectId && currentProjectId === expectedProjectId;
+  const isLoadingInitial = projects.length === 0;
+
+  useEffect(() => {
+    const init = async () => {
+      if (projects.length === 0) {
+        await fetchProjects();
+      }
+      if (publications.length === 0) {
+        await fetchPublications();
+      }
+    };
+    init();
+  }, [projects.length, publications.length, fetchProjects, fetchPublications]);
+
+  useEffect(() => {
+    if (expectedProjectId && currentProjectId !== expectedProjectId) {
+      setCurrentProject(expectedProjectId);
+    }
+  }, [expectedProjectId, currentProjectId, setCurrentProject]);
+
+  const project = useMemo(() => {
+    if (!expectedProjectId) return null;
+    return projects.find((p) => p.id === expectedProjectId) || null;
+  }, [projects, expectedProjectId]);
 
   const matchedPub = useMemo(() => {
     if (isPreviewMode) return null;
     return publications.find((p) => p.publishId === publishId);
   }, [publications, publishId, isPreviewMode]);
-
-  const projectId = useMemo(() => {
-    if (isPreviewMode) return publishId;
-    if (matchedPub) return matchedPub.projectId;
-    return null;
-  }, [matchedPub, isPreviewMode, publishId]);
-
-  const project = useMemo(() => {
-    if (!projectId) return null;
-    return projects.find((p) => p.id === projectId) || null;
-  }, [projects, projectId]);
-
-  useEffect(() => {
-    if (projectId) {
-      setCurrentProject(projectId);
-    }
-  }, [projectId, setCurrentProject]);
 
   const availableTemplates = templates.length > 0 ? templates : MOCK_TEMPLATES;
   const template = useMemo(() => {
@@ -566,8 +593,15 @@ export default function ViewReportPage() {
 
   const theme = template?.theme;
 
+  const projectDataSources = useMemo(() => {
+    if (expectedProjectId) {
+      return getProjectDataSources(expectedProjectId);
+    }
+    return [];
+  }, [expectedProjectId, getProjectDataSources, projects]);
+
   const reportSections = useMemo(() => {
-    if (sections.length > 0) {
+    if (isProjectReady && sections.length > 0) {
       return sections
         .filter((s) => s.title)
         .map((s, idx) => ({
@@ -576,7 +610,7 @@ export default function ViewReportPage() {
         }));
     }
     return [];
-  }, [sections]);
+  }, [sections, isProjectReady]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -595,13 +629,30 @@ export default function ViewReportPage() {
 
   const scrollToTop = () => window.scrollTo({ top: 0, behavior: "smooth" });
   const projectName = project?.name || "年度企业报告";
+  const isSwitching = expectedProjectId && currentProjectId !== expectedProjectId;
+  const showLoading = isLoadingInitial || loading || isSwitching;
 
-  if (!isPreviewMode && !matchedPub) {
-    return <NotFoundPage publishId={publishId} />;
+  if (!expectedProjectId && !isLoadingInitial) {
+    return <NotFoundPage publishId={publishId || id} />;
+  }
+
+  if (showLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+            className="w-12 h-12 border-4 border-deep-blue/20 border-t-deep-blue rounded-full mx-auto mb-4"
+          />
+          <p className="text-gray-500 text-sm">加载中...</p>
+        </div>
+      </div>
+    );
   }
 
   if (!project) {
-    return <NotFoundPage publishId={publishId} />;
+    return <NotFoundPage publishId={publishId || id} />;
   }
 
   return (
@@ -691,7 +742,7 @@ export default function ViewReportPage() {
 
       <div className="pt-16">
         {sections.length > 0 ? (
-          sections.map((section, idx) => renderSectionContent(section, dataSources, theme!, idx))
+          sections.map((section, idx) => renderSectionContent(section, projectDataSources, theme!, idx))
         ) : (
           <div className="min-h-screen flex items-center justify-center">
             <div className="text-center">

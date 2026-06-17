@@ -123,13 +123,9 @@ interface ViewReportRouteProps {
 }
 
 function ViewReportRoute({ children, isPreview }: ViewReportRouteProps) {
-  const { publishId, id } = useParams();
-  const publications = useAppStore((s) => s.publications);
   const projects = useAppStore((s) => s.projects);
+  const publications = useAppStore((s) => s.publications);
   const fetchProjects = useAppStore((s) => s.fetchProjects);
-  const setCurrentProject = useAppStore((s) => s.setCurrentProject);
-  const currentProjectId = useAppStore((s) => s.currentProjectId);
-  const extractProjectIdFromPublishId = useAppStore((s) => s.extractProjectIdFromPublishId);
   const fetchPublications = useAppStore((s) => s.fetchPublications);
 
   useEffectReact(() => {
@@ -143,28 +139,6 @@ function ViewReportRoute({ children, isPreview }: ViewReportRouteProps) {
     };
     init();
   }, [projects.length, publications.length, fetchProjects, fetchPublications]);
-
-  let projectId: string | null | undefined;
-  if (isPreview) {
-    projectId = id;
-  } else {
-    const matchedPub = publications.find((p) => p.publishId === publishId);
-    if (matchedPub) {
-      projectId = matchedPub.projectId;
-    } else if (publishId) {
-      const extracted = extractProjectIdFromPublishId(publishId);
-      const isValidProjectId = extracted && projects.length > 0 ? projects.some((p) => p.id === extracted) : true;
-      if (isValidProjectId) {
-        projectId = extracted;
-      }
-    }
-  }
-
-  useEffectReact(() => {
-    if (projectId && currentProjectId !== projectId) {
-      setCurrentProject(projectId);
-    }
-  }, [projectId, currentProjectId, setCurrentProject]);
 
   return <>{children}</>;
 }
