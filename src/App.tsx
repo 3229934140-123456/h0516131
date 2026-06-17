@@ -119,36 +119,33 @@ function ProtectedRoute({ permission, children }: ProtectedRouteProps) {
 
 interface ViewReportRouteProps {
   children: ReactNode;
+  isPreview?: boolean;
 }
 
-function ViewReportRoute({ children }: ViewReportRouteProps) {
-  const { publishId } = useParams();
+function ViewReportRoute({ children, isPreview }: ViewReportRouteProps) {
+  const { publishId, id } = useParams();
   const publications = useAppStore((s) => s.publications);
   const projects = useAppStore((s) => s.projects);
   const fetchProjects = useAppStore((s) => s.fetchProjects);
-  const fetchPublications = useAppStore((s) => s.fetchPublications);
   const setCurrentProject = useAppStore((s) => s.setCurrentProject);
   const currentProjectId = useAppStore((s) => s.currentProjectId);
 
-  const matchedPub = publications.find((p) => p.publishId === publishId);
+  const projectId = isPreview ? id : publications.find((p) => p.publishId === publishId)?.projectId;
 
   useEffectReact(() => {
     const init = async () => {
       if (projects.length === 0) {
         await fetchProjects();
       }
-      if (publications.length === 0) {
-        await fetchPublications();
-      }
     };
     init();
-  }, [projects.length, publications.length, fetchProjects, fetchPublications]);
+  }, [projects.length, fetchProjects]);
 
   useEffectReact(() => {
-    if (matchedPub && matchedPub.projectId && currentProjectId !== matchedPub.projectId) {
-      setCurrentProject(matchedPub.projectId);
+    if (projectId && currentProjectId !== projectId) {
+      setCurrentProject(projectId);
     }
-  }, [matchedPub, currentProjectId, setCurrentProject]);
+  }, [projectId, currentProjectId, setCurrentProject]);
 
   return <>{children}</>;
 }
@@ -263,6 +260,22 @@ function AnimatedRoutes() {
                 <PublishPage />
               </motion.div>
             </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/preview/:id"
+          element={
+            <ViewReportRoute isPreview>
+              <motion.div
+                variants={pageVariants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={pageTransition}
+              >
+                <ViewReportPage />
+              </motion.div>
+            </ViewReportRoute>
           }
         />
         <Route

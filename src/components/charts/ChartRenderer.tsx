@@ -13,6 +13,7 @@ interface ChartRendererProps {
   isSelected?: boolean;
   onClick?: () => void;
   sectionId?: string;
+  isPreview?: boolean;
 }
 
 const widthMap: Record<string, string> = {

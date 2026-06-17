@@ -249,8 +249,13 @@ export default function PublishPage() {
 
   const displayUrl = useMemo(() => {
     if (publishedUrl) return publishedUrl;
-    return `${typeof window !== "undefined" ? window.location.origin : ""}/view/${projectId}-pub`;
-  }, [publishedUrl, projectId]);
+    return "";
+  }, [publishedUrl]);
+
+  const publishedPath = useMemo(() => {
+    if (!latestPub) return null;
+    return `/view/${latestPub.publishId}`;
+  }, [latestPub]);
 
   const publishedAtStr = useMemo(() => {
     if (!latestPub) return null;
@@ -305,9 +310,9 @@ export default function PublishPage() {
           </div>
 
           <div className="flex items-center gap-3">
-            {isPublished && publishedUrl && (
+            {isPublished && publishedPath && (
               <Link
-                to={publishedUrl}
+                to={publishedPath}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:border-deep-blue/30 hover:text-deep-blue transition-all"

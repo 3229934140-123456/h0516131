@@ -124,6 +124,9 @@ interface AppState {
   fetchPublications: () => Promise<void>;
   publishWeb: (projectId: string, options?: PublishWebOptions) => Promise<Publication>;
   exportPdf: (projectId: string, options?: { password?: string }) => Promise<Publication>;
+  triggerManualSave: () => void;
+  getProjectSections: (projectId: string) => PageSection[];
+  getProjectDataSources: (projectId: string) => DataSource[];
 }
 
 const defaultTheme: ThemeConfig = MOCK_TEMPLATES[0].theme;
@@ -142,9 +145,6 @@ const triggerSave = (set: (partial: Partial<AppState>) => void) => {
   saveDebounceTimer = setTimeout(() => {
     const now = new Date();
     set({ saveStatus: 'saved', lastSavedAt: now });
-    savedStatusTimer = setTimeout(() => {
-      set({ saveStatus: 'idle' });
-    }, 3000);
   }, 500);
 };
 
@@ -173,6 +173,11 @@ export const useAppStore = create<AppState>()(
       },
 
       fetchProjects: async () => {
+        const { projects } = get();
+        if (projects.length > 0) {
+          set({ loading: false });
+          return;
+        }
         set({ loading: true });
         await delay(300);
         set({ projects: [...MOCK_PROJECTS], loading: false });
@@ -223,20 +228,46 @@ export const useAppStore = create<AppState>()(
       },
 
       setCurrentProject: async (projectId) => {
-        set({ loading: true });
-        await delay(300);
-        set({ currentProjectId: projectId, loading: false });
+        set({ loading: true, currentProjectId: projectId });
         if (projectId) {
-          await get().fetchSections();
-          await get().fetchDataSources();
-          await get().fetchCollaborators();
-          await get().fetchPublications();
+          const { sections, dataSources, collaborators, publications } = get();
+          const hasProjectSections = sections.length > 0;
+          const hasProjectData = dataSources.some((ds) => ds.projectId === projectId);
+          const hasCollabs = collaborators.some((c) => c.projectId === projectId);
+          const hasPubs = publications.some((p) => p.projectId === projectId);
+
+          if (!hasProjectSections) {
+            await get().fetchSections();
+          }
+          if (!hasProjectData) {
+            await get().fetchDataSources();
+          }
+          if (!hasCollabs) {
+            await get().fetchCollaborators();
+          }
+          if (!hasPubs) {
+            await get().fetchPublications();
+          }
+
+          const { lastSavedAt } = get();
+          if (lastSavedAt) {
+            set({ saveStatus: 'saved', loading: false });
+          } else {
+            set({ loading: false });
+          }
+        } else {
+          set({ loading: false });
         }
       },
 
       fetchDataSources: async () => {
-        const { currentProjectId } = get();
+        const { currentProjectId, dataSources } = get();
         if (!currentProjectId) return;
+        const existing = dataSources.filter((ds) => ds.projectId === currentProjectId);
+        if (existing.length > 0) {
+          set({ loading: false });
+          return;
+        }
         set({ loading: true });
         await delay(300);
         set({
@@ -301,8 +332,12 @@ export const useAppStore = create<AppState>()(
       },
 
       fetchSections: async () => {
-        const { currentProjectId } = get();
+        const { currentProjectId, sections } = get();
         if (!currentProjectId) return;
+        if (sections.length > 0) {
+          set({ loading: false });
+          return;
+        }
         set({ loading: true });
         await delay(300);
         set({
@@ -490,19 +525,27 @@ export const useAppStore = create<AppState>()(
       },
 
       fetchCollaborators: async () => {
-        const { currentProjectId } = get();
+        const { currentProjectId, collaborators } = get();
         if (!currentProjectId) return;
+        const existing = collaborators.filter((c) => c.projectId === currentProjectId);
+        if (existing.length > 0) {
+          set({ loading: false });
+          return;
+        }
         set({ loading: true });
         await delay(300);
         set((state) => ({
-          collaborators: MOCK_COLLABORATORS.map((c) => ({
-            userId: c.id,
-            user: { ...c, createdAt: new Date().toISOString() } as User,
-            projectId: currentProjectId,
-            role: c.role as Collaborator['role'],
-            joinedAt: new Date().toISOString(),
-            invitedBy: MOCK_USER.id,
-          })),
+          collaborators: [
+            ...state.collaborators.filter((c) => c.projectId !== currentProjectId),
+            ...MOCK_COLLABORATORS.map((c) => ({
+              userId: c.id,
+              user: { ...c, createdAt: new Date().toISOString() } as User,
+              projectId: currentProjectId,
+              role: c.role as Collaborator['role'],
+              joinedAt: new Date().toISOString(),
+              invitedBy: MOCK_USER.id,
+            })),
+          ],
           loading: false,
         }));
       },
@@ -640,6 +683,23 @@ export const useAppStore = create<AppState>()(
         triggerSave(set);
         return newPublication;
       },
+
+      triggerManualSave: () => {
+        const now = new Date();
+        set({ saveStatus: 'saved', lastSavedAt: now });
+      },
+
+      getProjectSections: (projectId: string) => {
+        const { sections, projects } = get();
+        const project = projects.find((p) => p.id === projectId);
+        if (!project) return [];
+        return sections;
+      },
+
+      getProjectDataSources: (projectId: string) => {
+        const { dataSources } = get();
+        return dataSources.filter((ds) => ds.projectId === projectId);
+      },
     }),
     {
       name: 'annual-report-app-state',
@@ -654,6 +714,7 @@ export const useAppStore = create<AppState>()(
         collaborators: state.collaborators,
         publications: state.publications,
         lastSavedAt: state.lastSavedAt,
+        saveStatus: state.saveStatus === 'saved' ? 'saved' : 'idle',
       }),
     }
   )

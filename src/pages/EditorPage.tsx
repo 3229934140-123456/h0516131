@@ -123,6 +123,7 @@ export default function EditorPage() {
     setSelectedItem,
     canEditData,
     canEditContent,
+    triggerManualSave,
   } = useAppStore();
 
   const editContent = canEditContent();
@@ -274,6 +275,9 @@ export default function EditorPage() {
 
           <div className="flex items-center gap-3">
             <button
+              onClick={() => {
+                triggerManualSave();
+              }}
               className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium text-white bg-gradient-to-r from-deep-blue to-deep-blue-light hover:shadow-lg hover:shadow-deep-blue/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={!editContent}
             >
@@ -281,7 +285,9 @@ export default function EditorPage() {
               保存
             </button>
             <Link
-              to={`/view/${id}-pub`}
+              to={`/preview/${id}`}
+              target="_blank"
+              rel="noopener noreferrer"
               className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium border border-gray-200 text-gray-700 bg-white hover:border-deep-blue/30 hover:text-deep-blue transition-all"
             >
               <Eye className="w-4 h-4" />
