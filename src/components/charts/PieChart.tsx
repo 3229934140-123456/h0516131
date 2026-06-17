@@ -35,8 +35,9 @@ export const PieChart: React.FC<PieChartProps> = ({ config, dataSources }) => {
     return DEFAULT_PIE_DATA;
   }, [dataSource, config.labelField, config.valueField]);
 
-  const animationDuration = config.styleConfig.animationEnabled ? 1000 : 0;
+  const animationEnabled = config.styleConfig.animationEnabled;
   const palette = config.styleConfig.colorPalette;
+  const { showLegend, showLabels, fontFamily } = config.styleConfig;
 
   const RADIAN = Math.PI / 180;
   const renderCustomLabel = ({
@@ -48,7 +49,7 @@ export const PieChart: React.FC<PieChartProps> = ({ config, dataSources }) => {
     percent,
     name,
   }: any) => {
-    if (!config.styleConfig.showLabels) return null;
+    if (!showLabels) return null;
     const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
     const x = cx + radius * Math.cos(-midAngle * RADIAN);
     const y = cy + radius * Math.sin(-midAngle * RADIAN);
@@ -64,7 +65,7 @@ export const PieChart: React.FC<PieChartProps> = ({ config, dataSources }) => {
         dominantBaseline="central"
         fontSize={12}
         fontWeight={600}
-        fontFamily={config.styleConfig.fontFamily}
+        fontFamily={fontFamily}
       >
         {`${(percent * 100).toFixed(0)}%`}
       </text>
@@ -89,7 +90,7 @@ export const PieChart: React.FC<PieChartProps> = ({ config, dataSources }) => {
             className="text-lg font-semibold"
             style={{
               color: '#1e3a5f',
-              fontFamily: config.styleConfig.fontFamily,
+              fontFamily: fontFamily,
             }}
           >
             {config.title}
@@ -97,7 +98,7 @@ export const PieChart: React.FC<PieChartProps> = ({ config, dataSources }) => {
           {config.subtitle && (
             <p
               className="text-sm mt-1"
-              style={{ color: '#64748b', fontFamily: config.styleConfig.fontFamily }}
+              style={{ color: '#64748b', fontFamily: fontFamily }}
             >
               {config.subtitle}
             </p>
@@ -119,7 +120,8 @@ export const PieChart: React.FC<PieChartProps> = ({ config, dataSources }) => {
               dataKey="value"
               stroke="#ffffff"
               strokeWidth={2}
-              animationDuration={animationDuration}
+              isAnimationActive={animationEnabled}
+              animationDuration={1000}
               animationEasing="ease-out"
             >
               {pieData.map((_, index) => (
@@ -135,7 +137,7 @@ export const PieChart: React.FC<PieChartProps> = ({ config, dataSources }) => {
                 border: `1px solid #c9a962`,
                 borderRadius: 8,
                 boxShadow: '0 4px 12px rgba(30, 58, 95, 0.15)',
-                fontFamily: config.styleConfig.fontFamily,
+                fontFamily: fontFamily,
               }}
               labelStyle={{
                 color: '#1e3a5f',
@@ -151,11 +153,11 @@ export const PieChart: React.FC<PieChartProps> = ({ config, dataSources }) => {
                 name,
               ]}
             />
-            {config.styleConfig.showLegend && (
+            {showLegend && (
               <Legend
                 wrapperStyle={{
                   paddingTop: 16,
-                  fontFamily: config.styleConfig.fontFamily,
+                  fontFamily: fontFamily,
                 }}
                 iconType="circle"
                 iconSize={8}

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { Link, useParams } from "react-router-dom";
 import { motion, useInView, AnimatePresence } from "framer-motion";
 import {
@@ -30,13 +30,12 @@ import {
   AreaChart,
   Area,
 } from "recharts";
+import { useAppStore } from "@/store/appStore";
 import {
-  MOCK_PROJECTS,
   MOCK_TEMPLATES,
   MOCK_REVENUE_DATA,
   MOCK_CITY_DATA,
   MOCK_SEGMENT_DATA,
-  MOCK_USER,
 } from "@shared/mockData";
 
 function AnimatedSection({ children, className = "", delay = 0 }: { children: React.ReactNode; className?: string; delay?: number }) {
@@ -96,15 +95,57 @@ export default function ViewReportPage() {
   const [showBackToTop, setShowBackToTop] = useState(false);
   const [activeSection, setActiveSection] = useState(0);
 
-  const project = MOCK_PROJECTS[0];
-  const template = MOCK_TEMPLATES.find((t) => t.id === project?.templateId) || MOCK_TEMPLATES[0];
+  const publications = useAppStore((s) => s.publications);
+  const projects = useAppStore((s) => s.projects);
+  const sections = useAppStore((s) => s.sections);
+  const templates = useAppStore((s) => s.templates);
+  const currentUser = useAppStore((s) => s.currentUser);
+
+  const matchedPub = useMemo(() => {
+    return publications.find((p) => p.publishId === publishId);
+  }, [publications, publishId]);
+
+  const project = useMemo(() => {
+    if (matchedPub) {
+      return projects.find((p) => p.id === matchedPub.projectId) || projects[0];
+    }
+    return projects[0];
+  }, [matchedPub, projects]);
+
+  const availableTemplates = templates.length > 0 ? templates : MOCK_TEMPLATES;
+  const template = useMemo(() => {
+    if (project?.templateId) {
+      const t = availableTemplates.find((t) => t.id === project.templateId);
+      if (t) return t;
+    }
+    return availableTemplates[0] || MOCK_TEMPLATES[0];
+  }, [project, availableTemplates]);
+
+  const reportSections = useMemo(() => {
+    if (sections.length > 0) {
+      const titles = sections
+        .filter((s) => s.title)
+        .map((s, idx) => ({
+          id: `section-${idx}`,
+          label: s.title?.substring(0, 12) || `第${idx + 1}节`,
+        }));
+      if (titles.length >= 4) return titles.slice(0, 5);
+    }
+    return [
+      { id: "cover", label: "封面" },
+      { id: "overview", label: "概览" },
+      { id: "trend", label: "营收趋势" },
+      { id: "structure", label: "业务结构" },
+      { id: "outlook", label: "展望" },
+    ];
+  }, [sections]);
 
   useEffect(() => {
     const handleScroll = () => {
       setShowBackToTop(window.scrollY > 600);
 
-      const sections = document.querySelectorAll("[data-section]");
-      sections.forEach((section, index) => {
+      const els = document.querySelectorAll("[data-section]");
+      els.forEach((section, index) => {
         const rect = section.getBoundingClientRect();
         if (rect.top <= window.innerHeight / 2 && rect.bottom >= window.innerHeight / 2) {
           setActiveSection(index);
@@ -116,17 +157,11 @@ export default function ViewReportPage() {
   }, []);
 
   const scrollToTop = () => window.scrollTo({ top: 0, behavior: "smooth" });
-
-  const sections = [
-    { id: "cover", label: "封面" },
-    { id: "overview", label: "概览" },
-    { id: "trend", label: "营收趋势" },
-    { id: "structure", label: "业务结构" },
-    { id: "outlook", label: "展望" },
-  ];
+  const projectName = project?.name || "2024年度企业年报";
+  const theme = template?.theme;
 
   return (
-    <div className="min-h-screen bg-white" style={{ fontFamily: template.theme.bodyFont }}>
+    <div className="min-h-screen bg-white" style={{ fontFamily: theme?.bodyFont }}>
       <AnimatePresence>
         {showBackToTop && (
           <motion.button
@@ -154,19 +189,21 @@ export default function ViewReportPage() {
             <div className="flex items-center gap-2.5">
               <div
                 className="w-9 h-9 rounded-xl flex items-center justify-center"
-                style={{ backgroundColor: template.theme.primaryColor }}
+                style={{ backgroundColor: theme?.primaryColor }}
               >
-                <FileText className="w-4.5 h-4.5" style={{ color: template.theme.accentColor }} />
+                <FileText className="w-4.5 h-4.5" style={{ color: theme?.accentColor }} />
               </div>
               <div>
-                <h1 className="font-semibold text-gray-900 text-sm leading-tight">{project?.name}</h1>
-                <p className="text-xs text-gray-500 leading-tight">已发布版本</p>
+                <h1 className="font-semibold text-gray-900 text-sm leading-tight">{projectName}</h1>
+                <p className="text-xs text-gray-500 leading-tight">
+                  已发布版本 {matchedPub ? `· v${matchedPub.version}` : ""}
+                </p>
               </div>
             </div>
           </div>
 
           <div className="hidden lg:flex items-center gap-1 bg-gray-100 rounded-xl p-1">
-            {sections.map((s, i) => (
+            {reportSections.map((s, i) => (
               <button
                 key={s.id}
                 onClick={() => {
@@ -202,7 +239,7 @@ export default function ViewReportPage() {
           data-section
           className="relative min-h-screen flex items-center justify-center overflow-hidden"
           style={{
-            background: `linear-gradient(135deg, ${template.theme.primaryColor} 0%, ${template.theme.secondaryColor || template.theme.primaryColor} 50%, ${template.theme.primaryColor}dd 100%)`,
+            background: `linear-gradient(135deg, ${theme?.primaryColor} 0%, ${theme?.secondaryColor || theme?.primaryColor} 50%, ${theme?.primaryColor}dd 100%)`,
           }}
         >
           <div className="absolute inset-0 overflow-hidden">
@@ -210,7 +247,7 @@ export default function ViewReportPage() {
               animate={{ scale: [1, 1.2, 1], opacity: [0.15, 0.25, 0.15] }}
               transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
               className="absolute -bottom-40 -right-40 w-[600px] h-[600px] rounded-full"
-              style={{ backgroundColor: template.theme.accentColor }}
+              style={{ backgroundColor: theme?.accentColor }}
             />
             <motion.div
               animate={{ scale: [1, 1.1, 1], opacity: [0.1, 0.2, 0.1] }}
@@ -221,7 +258,7 @@ export default function ViewReportPage() {
               animate={{ y: [0, -30, 0], x: [0, 20, 0] }}
               transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
               className="absolute top-1/4 right-1/4 w-24 h-24 rounded-full"
-              style={{ backgroundColor: `${template.theme.accentColor}40` }}
+              style={{ backgroundColor: `${theme?.accentColor}40` }}
             />
           </div>
 
@@ -231,9 +268,9 @@ export default function ViewReportPage() {
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 1, delay: 0.2 }}
               className="w-20 h-20 mx-auto mb-10 rounded-3xl flex items-center justify-center backdrop-blur-sm"
-              style={{ backgroundColor: `${template.theme.accentColor}20`, border: `1px solid ${template.theme.accentColor}40` }}
+              style={{ backgroundColor: `${theme?.accentColor}20`, border: `1px solid ${theme?.accentColor}40` }}
             >
-              <Home className="w-10 h-10" style={{ color: template.theme.accentColor }} />
+              <Home className="w-10 h-10" style={{ color: theme?.accentColor }} />
             </motion.div>
 
             <motion.p
@@ -241,7 +278,7 @@ export default function ViewReportPage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.8, delay: 0.4 }}
               className="text-lg tracking-[0.3em] mb-6"
-              style={{ color: template.theme.accentColor }}
+              style={{ color: theme?.accentColor }}
             >
               ANNUAL REPORT 2024
             </motion.p>
@@ -251,11 +288,11 @@ export default function ViewReportPage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 1, delay: 0.6 }}
               className="text-6xl md:text-7xl lg:text-8xl font-heading font-bold text-white mb-8 leading-tight"
-              style={{ fontFamily: template.theme.headingFont }}
+              style={{ fontFamily: theme?.headingFont }}
             >
               2024 年度
               <br />
-              <span style={{ color: template.theme.accentColor }}>企业报告</span>
+              <span style={{ color: theme?.accentColor }}>企业报告</span>
             </motion.h1>
 
             <motion.p
@@ -274,22 +311,22 @@ export default function ViewReportPage() {
               className="flex items-center justify-center gap-12"
             >
               <div className="text-center">
-                <p className="text-4xl md:text-5xl font-bold text-white mb-2" style={{ fontFamily: template.theme.headingFont }}>
-                  6.94<span style={{ color: template.theme.accentColor }}>亿</span>
+                <p className="text-4xl md:text-5xl font-bold text-white mb-2" style={{ fontFamily: theme?.headingFont }}>
+                  6.94<span style={{ color: theme?.accentColor }}>亿</span>
                 </p>
                 <p className="text-white/60 text-sm tracking-wider">年度营收</p>
               </div>
               <div className="w-px h-12 bg-white/20" />
               <div className="text-center">
-                <p className="text-4xl md:text-5xl font-bold text-white mb-2" style={{ fontFamily: template.theme.headingFont }}>
-                  41.8<span style={{ color: template.theme.accentColor }}>万</span>
+                <p className="text-4xl md:text-5xl font-bold text-white mb-2" style={{ fontFamily: theme?.headingFont }}>
+                  41.8<span style={{ color: theme?.accentColor }}>万</span>
                 </p>
                 <p className="text-white/60 text-sm tracking-wider">累计用户</p>
               </div>
               <div className="w-px h-12 bg-white/20" />
               <div className="text-center">
-                <p className="text-4xl md:text-5xl font-bold text-white mb-2" style={{ fontFamily: template.theme.headingFont }}>
-                  58<span style={{ color: template.theme.accentColor }}>座</span>
+                <p className="text-4xl md:text-5xl font-bold text-white mb-2" style={{ fontFamily: theme?.headingFont }}>
+                  58<span style={{ color: theme?.accentColor }}>座</span>
                 </p>
                 <p className="text-white/60 text-sm tracking-wider">覆盖城市</p>
               </div>
@@ -318,7 +355,7 @@ export default function ViewReportPage() {
               <p className="text-sm tracking-[0.2em] text-gold font-semibold mb-4">01 / OVERVIEW</p>
               <h2
                 className="text-4xl md:text-5xl font-bold mb-6"
-                style={{ color: template.theme.primaryColor, fontFamily: template.theme.headingFont }}
+                style={{ color: theme?.primaryColor, fontFamily: theme?.headingFont }}
               >
                 核心经营数据
               </h2>
@@ -339,18 +376,18 @@ export default function ViewReportPage() {
                   >
                     <div
                       className="absolute top-0 right-0 w-32 h-32 rounded-full -translate-y-12 translate-x-12 transition-transform group-hover:scale-125"
-                      style={{ backgroundColor: `${template.theme.primaryColor}08` }}
+                      style={{ backgroundColor: `${theme?.primaryColor}08` }}
                     />
                     <div
                       className="w-14 h-14 rounded-2xl flex items-center justify-center mb-6"
-                      style={{ backgroundColor: `${template.theme.primaryColor}12` }}
+                      style={{ backgroundColor: `${theme?.primaryColor}12` }}
                     >
-                      <item.icon className="w-7 h-7" style={{ color: template.theme.primaryColor }} />
+                      <item.icon className="w-7 h-7" style={{ color: theme?.primaryColor }} />
                     </div>
                     <p className="text-gray-500 text-sm mb-3">{item.label}</p>
                     <p
                       className="text-3xl md:text-4xl font-bold"
-                      style={{ color: template.theme.primaryColor, fontFamily: template.theme.headingFont }}
+                      style={{ color: theme?.primaryColor, fontFamily: theme?.headingFont }}
                     >
                       <AnimatedNumber value={item.value} suffix={item.suffix} delay={item.delay} />
                     </p>
@@ -361,12 +398,12 @@ export default function ViewReportPage() {
 
             <AnimatedSection>
               <div className="relative bg-white rounded-3xl p-10 shadow-xl shadow-gray-100 border border-gray-100 overflow-hidden">
-                <div className="absolute top-6 right-6 flex items-center gap-2 px-3 py-1.5 rounded-xl" style={{ backgroundColor: `${template.theme.accentColor}15` }}>
-                  <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: template.theme.accentColor }} />
-                  <span className="text-xs font-medium" style={{ color: template.theme.accentColor }}>实时数据</span>
+                <div className="absolute top-6 right-6 flex items-center gap-2 px-3 py-1.5 rounded-xl" style={{ backgroundColor: `${theme?.accentColor}15` }}>
+                  <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: theme?.accentColor }} />
+                  <span className="text-xs font-medium" style={{ color: theme?.accentColor }}>实时数据</span>
                 </div>
                 <div className="mb-8">
-                  <h3 className="text-2xl font-bold mb-2" style={{ color: template.theme.primaryColor, fontFamily: template.theme.headingFont }}>
+                  <h3 className="text-2xl font-bold mb-2" style={{ color: theme?.primaryColor, fontFamily: theme?.headingFont }}>
                     季度营收与利润趋势
                   </h3>
                   <p className="text-gray-500">2023 Q1 — 2024 Q4 对比分析</p>
@@ -376,12 +413,12 @@ export default function ViewReportPage() {
                     <AreaChart data={MOCK_REVENUE_DATA} margin={{ top: 20, right: 30, bottom: 20, left: 20 }}>
                       <defs>
                         <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor={template.theme.primaryColor} stopOpacity={0.3} />
-                          <stop offset="95%" stopColor={template.theme.primaryColor} stopOpacity={0} />
+                          <stop offset="5%" stopColor={theme?.primaryColor} stopOpacity={0.3} />
+                          <stop offset="95%" stopColor={theme?.primaryColor} stopOpacity={0} />
                         </linearGradient>
                         <linearGradient id="colorProfit" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor={template.theme.accentColor} stopOpacity={0.3} />
-                          <stop offset="95%" stopColor={template.theme.accentColor} stopOpacity={0} />
+                          <stop offset="5%" stopColor={theme?.accentColor} stopOpacity={0.3} />
+                          <stop offset="95%" stopColor={theme?.accentColor} stopOpacity={0} />
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
@@ -391,8 +428,8 @@ export default function ViewReportPage() {
                         contentStyle={{ borderRadius: "16px", border: "1px solid #e5e7eb", boxShadow: "0 10px 40px rgba(0,0,0,0.1)", padding: "16px 20px" }}
                       />
                       <Legend iconType="circle" wrapperStyle={{ paddingTop: "24px", fontSize: "14px" }} />
-                      <Area type="monotone" dataKey="revenue" name="营收(万元)" stroke={template.theme.primaryColor} strokeWidth={3} fillOpacity={1} fill="url(#colorRevenue)" />
-                      <Area type="monotone" dataKey="profit" name="利润(万元)" stroke={template.theme.accentColor} strokeWidth={3} fillOpacity={1} fill="url(#colorProfit)" />
+                      <Area type="monotone" dataKey="revenue" name="营收(万元)" stroke={theme?.primaryColor} strokeWidth={3} fillOpacity={1} fill="url(#colorRevenue)" />
+                      <Area type="monotone" dataKey="profit" name="利润(万元)" stroke={theme?.accentColor} strokeWidth={3} fillOpacity={1} fill="url(#colorProfit)" />
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
@@ -407,7 +444,7 @@ export default function ViewReportPage() {
               <p className="text-sm tracking-[0.2em] text-gold font-semibold mb-4">02 / ANALYSIS</p>
               <h2
                 className="text-4xl md:text-5xl font-bold mb-6"
-                style={{ color: template.theme.primaryColor, fontFamily: template.theme.headingFont }}
+                style={{ color: theme?.primaryColor, fontFamily: theme?.headingFont }}
               >
                 业务结构分析
               </h2>
@@ -417,7 +454,7 @@ export default function ViewReportPage() {
             <div className="grid lg:grid-cols-2 gap-8 mb-10">
               <AnimatedSection>
                 <div className="bg-gradient-to-br from-gray-50 to-white rounded-3xl p-8 border border-gray-100 h-full">
-                  <h3 className="text-xl font-bold mb-2" style={{ color: template.theme.primaryColor, fontFamily: template.theme.headingFont }}>
+                  <h3 className="text-xl font-bold mb-2" style={{ color: theme?.primaryColor, fontFamily: theme?.headingFont }}>
                     主要城市用户分布
                   </h3>
                   <p className="text-gray-500 text-sm mb-6">Top 10 城市用户数量对比</p>
@@ -432,7 +469,7 @@ export default function ViewReportPage() {
                           {MOCK_CITY_DATA.map((_, index) => (
                             <Cell
                               key={index}
-                              fill={index === 0 ? template.theme.primaryColor : index < 3 ? template.theme.secondaryColor || template.theme.primaryColor : `${template.theme.primaryColor}55`}
+                              fill={index === 0 ? theme?.primaryColor : index < 3 ? theme?.secondaryColor || theme?.primaryColor : `${theme?.primaryColor}55`}
                             />
                           ))}
                         </Bar>
@@ -444,7 +481,7 @@ export default function ViewReportPage() {
 
               <AnimatedSection delay={0.15}>
                 <div className="bg-gradient-to-br from-gray-50 to-white rounded-3xl p-8 border border-gray-100 h-full">
-                  <h3 className="text-xl font-bold mb-2" style={{ color: template.theme.primaryColor, fontFamily: template.theme.headingFont }}>
+                  <h3 className="text-xl font-bold mb-2" style={{ color: theme?.primaryColor, fontFamily: theme?.headingFont }}>
                     客户群体构成
                   </h3>
                   <p className="text-gray-500 text-sm mb-6">各类客户占比分布</p>
@@ -487,12 +524,12 @@ export default function ViewReportPage() {
                   <div className="flex items-start justify-between flex-wrap gap-6 mb-10">
                     <div>
                       <p className="text-gold/80 text-sm tracking-wider mb-3">年度目标完成度</p>
-                      <h3 className="text-3xl md:text-4xl font-bold text-white mb-2" style={{ fontFamily: template.theme.headingFont }}>
+                      <h3 className="text-3xl md:text-4xl font-bold text-white mb-2" style={{ fontFamily: theme?.headingFont }}>
                         战略目标执行情况
                       </h3>
                     </div>
                     <div className="text-right">
-                      <p className="text-6xl md:text-7xl font-bold text-gold" style={{ fontFamily: template.theme.headingFont }}>
+                      <p className="text-6xl md:text-7xl font-bold text-gold" style={{ fontFamily: theme?.headingFont }}>
                         86.75<span className="text-3xl">%</span>
                       </p>
                     </div>
@@ -532,7 +569,7 @@ export default function ViewReportPage() {
               <p className="text-sm tracking-[0.2em] text-gold font-semibold mb-4">03 / OUTLOOK</p>
               <h2
                 className="text-4xl md:text-5xl font-bold mb-6"
-                style={{ color: template.theme.primaryColor, fontFamily: template.theme.headingFont }}
+                style={{ color: theme?.primaryColor, fontFamily: theme?.headingFont }}
               >
                 战略成果与展望
               </h2>
@@ -560,8 +597,8 @@ export default function ViewReportPage() {
                     className="bg-white rounded-3xl p-10 border border-gray-100 shadow-lg shadow-gray-100/50 h-full"
                   >
                     <div className="flex items-center gap-4 mb-6">
-                      <div className="w-12 h-12 rounded-2xl" style={{ backgroundColor: `${template.theme.primaryColor}12` }} />
-                      <h3 className="text-2xl font-bold" style={{ color: template.theme.primaryColor, fontFamily: template.theme.headingFont }}>
+                      <div className="w-12 h-12 rounded-2xl" style={{ backgroundColor: `${theme?.primaryColor}12` }} />
+                      <h3 className="text-2xl font-bold" style={{ color: theme?.primaryColor, fontFamily: theme?.headingFont }}>
                         {block.title}
                       </h3>
                     </div>
@@ -578,7 +615,7 @@ export default function ViewReportPage() {
                         >
                           <div
                             className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
-                            style={{ backgroundColor: template.theme.accentColor }}
+                            style={{ backgroundColor: theme?.accentColor }}
                           >
                             <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
@@ -595,9 +632,9 @@ export default function ViewReportPage() {
           </div>
         </section>
 
-        <section id="outlook" data-section className="relative py-28 px-6 overflow-hidden" style={{ backgroundColor: template.theme.primaryColor }}>
+        <section id="outlook" data-section className="relative py-28 px-6 overflow-hidden" style={{ backgroundColor: theme?.primaryColor }}>
           <div className="absolute inset-0 overflow-hidden">
-            <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full opacity-10" style={{ backgroundColor: template.theme.accentColor, transform: "translate(30%, -30%)" }} />
+            <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full opacity-10" style={{ backgroundColor: theme?.accentColor, transform: "translate(30%, -30%)" }} />
             <div className="absolute bottom-0 left-0 w-[400px] h-[400px] rounded-full bg-white/5" style={{ transform: "translate(-30%, 30%)" }} />
           </div>
 
@@ -609,14 +646,14 @@ export default function ViewReportPage() {
                 viewport={{ once: true }}
                 transition={{ duration: 0.8 }}
                 className="inline-block p-5 rounded-3xl mb-10 border"
-                style={{ backgroundColor: `${template.theme.accentColor}20`, borderColor: `${template.theme.accentColor}40` }}
+                style={{ backgroundColor: `${theme?.accentColor}20`, borderColor: `${theme?.accentColor}40` }}
               >
-                <FileText className="w-10 h-10" style={{ color: template.theme.accentColor }} />
+                <FileText className="w-10 h-10" style={{ color: theme?.accentColor }} />
               </motion.div>
             </AnimatedSection>
 
             <AnimatedSection delay={0.1}>
-              <h2 className="text-4xl md:text-5xl font-bold text-white mb-8" style={{ fontFamily: template.theme.headingFont }}>
+              <h2 className="text-4xl md:text-5xl font-bold text-white mb-8" style={{ fontFamily: theme?.headingFont }}>
                 结语
               </h2>
             </AnimatedSection>
@@ -626,7 +663,7 @@ export default function ViewReportPage() {
                 感谢每一位客户、合作伙伴和员工的信任与支持。
                 <br className="hidden md:block" />
                 站在新的起点，我们将继续秉持
-                <span style={{ color: template.theme.accentColor }} className="font-semibold"> 「创新、协作、共赢」</span>
+                <span style={{ color: theme?.accentColor }} className="font-semibold"> 「创新、协作、共赢」</span>
                 的核心价值观，
                 <br className="hidden md:block" />
                 与您携手共创更加美好的未来。
@@ -636,7 +673,7 @@ export default function ViewReportPage() {
             <AnimatedSection delay={0.3}>
               <div className="flex items-center justify-center gap-8 mb-16">
                 <div className="h-px flex-1 max-w-40 bg-gradient-to-r from-transparent to-white/20" />
-                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: template.theme.accentColor }} />
+                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: theme?.accentColor }} />
                 <div className="h-px flex-1 max-w-40 bg-gradient-to-l from-transparent to-white/20" />
               </div>
             </AnimatedSection>
@@ -644,13 +681,13 @@ export default function ViewReportPage() {
             <AnimatedSection delay={0.4}>
               <div className="flex items-center justify-center gap-5 mb-8">
                 <div className="w-14 h-14 rounded-2xl flex items-center justify-center bg-white/10 backdrop-blur-sm">
-                  <span className="text-white font-bold text-xl" style={{ fontFamily: template.theme.headingFont }}>
-                    {MOCK_USER.name.charAt(0)}
+                  <span className="text-white font-bold text-xl" style={{ fontFamily: theme?.headingFont }}>
+                    {currentUser.name.charAt(0)}
                   </span>
                 </div>
                 <div className="text-left">
-                  <p className="text-white font-semibold text-lg">{MOCK_USER.name}</p>
-                  <p className="text-white/60 text-sm">{MOCK_USER.role === "admin" ? "首席执行官" : "管理员"}</p>
+                  <p className="text-white font-semibold text-lg">{currentUser.name}</p>
+                  <p className="text-white/60 text-sm">{currentUser.role === "admin" ? "首席执行官" : "管理员"}</p>
                 </div>
               </div>
             </AnimatedSection>

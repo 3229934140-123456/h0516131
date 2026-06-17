@@ -22,11 +22,11 @@ export const BarChart: React.FC<BarChartProps> = ({ config, dataSources }) => {
   const dataSource = dataSources.find((ds) => ds.id === config.dataSourceId);
   const data = dataSource?.rows || [];
 
-  const animationDuration = config.styleConfig.animationEnabled ? 1000 : 0;
+  const animationEnabled = config.styleConfig.animationEnabled;
 
   const yFields = config.yFields || [];
   const palette = config.styleConfig.colorPalette;
-  const barRadius = config.styleConfig.barRadius;
+  const { showGrid, showLegend, showLabels, barRadius, fontFamily } = config.styleConfig;
 
   const fieldLabels = useMemo(() => {
     const labels: Record<string, string> = {};
@@ -39,6 +39,23 @@ export const BarChart: React.FC<BarChartProps> = ({ config, dataSources }) => {
   }, [dataSource]);
 
   const isSingleBar = yFields.length === 1;
+
+  const renderLabel = (props: any) => {
+    if (!showLabels) return null;
+    const { x, y, width, value } = props;
+    return (
+      <text
+        x={x + width / 2}
+        y={y - 8}
+        fill="#64748b"
+        fontSize={11}
+        fontFamily={fontFamily}
+        textAnchor="middle"
+      >
+        {typeof value === 'number' ? value.toLocaleString() : value}
+      </text>
+    );
+  };
 
   return (
     <motion.div
@@ -58,7 +75,7 @@ export const BarChart: React.FC<BarChartProps> = ({ config, dataSources }) => {
             className="text-lg font-semibold"
             style={{
               color: '#1e3a5f',
-              fontFamily: config.styleConfig.fontFamily,
+              fontFamily: fontFamily,
             }}
           >
             {config.title}
@@ -66,7 +83,7 @@ export const BarChart: React.FC<BarChartProps> = ({ config, dataSources }) => {
           {config.subtitle && (
             <p
               className="text-sm mt-1"
-              style={{ color: '#64748b', fontFamily: config.styleConfig.fontFamily }}
+              style={{ color: '#64748b', fontFamily: fontFamily }}
             >
               {config.subtitle}
             </p>
@@ -80,22 +97,23 @@ export const BarChart: React.FC<BarChartProps> = ({ config, dataSources }) => {
             data={data}
             margin={{ top: 10, right: 30, left: 10, bottom: 10 }}
           >
-            {config.styleConfig.showGrid && (
+            {showGrid && (
               <CartesianGrid
                 strokeDasharray="3 3"
                 stroke="#e2e8f0"
                 strokeWidth={1}
-                vertical={false}
+                vertical={!showGrid ? false : true}
+                horizontal={showGrid}
               />
             )}
             <XAxis
               dataKey={config.xField}
-              tick={{ fill: '#64748b', fontSize: 12, fontFamily: config.styleConfig.fontFamily }}
+              tick={{ fill: '#64748b', fontSize: 12, fontFamily: fontFamily }}
               axisLine={{ stroke: '#cbd5e1' }}
               tickLine={{ stroke: '#cbd5e1' }}
             />
             <YAxis
-              tick={{ fill: '#64748b', fontSize: 12, fontFamily: config.styleConfig.fontFamily }}
+              tick={{ fill: '#64748b', fontSize: 12, fontFamily: fontFamily }}
               axisLine={{ stroke: '#cbd5e1' }}
               tickLine={{ stroke: '#cbd5e1' }}
             />
@@ -105,7 +123,7 @@ export const BarChart: React.FC<BarChartProps> = ({ config, dataSources }) => {
                 border: `1px solid #c9a962`,
                 borderRadius: 8,
                 boxShadow: '0 4px 12px rgba(30, 58, 95, 0.15)',
-                fontFamily: config.styleConfig.fontFamily,
+                fontFamily: fontFamily,
               }}
               labelStyle={{
                 color: '#1e3a5f',
@@ -118,11 +136,11 @@ export const BarChart: React.FC<BarChartProps> = ({ config, dataSources }) => {
               }}
               cursor={{ fill: 'rgba(201, 169, 98, 0.08)' }}
             />
-            {config.styleConfig.showLegend && yFields.length > 1 && (
+            {showLegend && yFields.length > 1 && (
               <Legend
                 wrapperStyle={{
                   paddingTop: 16,
-                  fontFamily: config.styleConfig.fontFamily,
+                  fontFamily: fontFamily,
                 }}
                 iconType="square"
                 iconSize={10}
@@ -139,9 +157,11 @@ export const BarChart: React.FC<BarChartProps> = ({ config, dataSources }) => {
                 dataKey={field}
                 name={fieldLabels[field] || field}
                 fill={palette[index % palette.length]}
-                radius={isSingleBar ? [barRadius, barRadius, 0, 0] : barRadius}
-                animationDuration={animationDuration}
+                radius={isSingleBar ? [barRadius, barRadius, 0, 0] : [barRadius, barRadius, barRadius, barRadius]}
+                isAnimationActive={animationEnabled}
+                animationDuration={1000}
                 animationEasing="ease-out"
+                label={showLabels ? renderLabel : undefined}
               >
                 {isSingleBar &&
                   data.map((_, i) => (
