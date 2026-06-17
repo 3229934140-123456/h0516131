@@ -70,13 +70,16 @@ interface AppState {
   currentProjectId: string | null;
   dataSources: DataSource[];
   sections: PageSection[];
+  sectionsMap: Record<string, PageSection[]>;
   templates: Template[];
   currentTheme: ThemeConfig;
   selectedItem: SelectedItem;
   loading: boolean;
 
   saveStatus: SaveStatus;
+  saveStatusMap: Record<string, SaveStatus>;
   lastSavedAt: Date | null;
+  lastSavedAtMap: Record<string, string>;
 
   collaborators: Collaborator[];
   publications: Publication[];
@@ -127,6 +130,7 @@ interface AppState {
   triggerManualSave: () => void;
   getProjectSections: (projectId: string) => PageSection[];
   getProjectDataSources: (projectId: string) => DataSource[];
+  extractProjectIdFromPublishId: (publishId: string) => string | null;
 }
 
 const defaultTheme: ThemeConfig = MOCK_TEMPLATES[0].theme;
@@ -134,18 +138,53 @@ const defaultTheme: ThemeConfig = MOCK_TEMPLATES[0].theme;
 let saveDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let savedStatusTimer: ReturnType<typeof setTimeout> | null = null;
 
-const triggerSave = (set: (partial: Partial<AppState>) => void) => {
+const triggerSave = (
+  set: (partial: Partial<AppState>) => void,
+  get: () => AppState
+) => {
   if (saveDebounceTimer) {
     clearTimeout(saveDebounceTimer);
   }
-  if (savedStatusTimer) {
-    clearTimeout(savedStatusTimer);
-  }
-  set({ saveStatus: 'saving' });
+  const { currentProjectId, saveStatusMap, lastSavedAtMap } = get();
+  if (!currentProjectId) return;
+  set({ saveStatus: 'saving', saveStatusMap: { ...saveStatusMap, [currentProjectId]: 'saving' } });
   saveDebounceTimer = setTimeout(() => {
     const now = new Date();
-    set({ saveStatus: 'saved', lastSavedAt: now });
+    const nowStr = now.toISOString();
+    set({
+      saveStatus: 'saved',
+      lastSavedAt: now,
+      saveStatusMap: { ...saveStatusMap, [currentProjectId]: 'saved' },
+      lastSavedAtMap: { ...lastSavedAtMap, [currentProjectId]: nowStr },
+    });
   }, 500);
+};
+
+const extractProjectIdFromPublishId = (publishId: string): string | null => {
+  for (let i = publishId.length - 1; i >= 0; i--) {
+    if (publishId[i] === '-' && publishId.length - i - 1 >= 8) {
+      return publishId.slice(0, i);
+    }
+  }
+  return null;
+};
+
+const buildInitialPublications = (): Publication[] => {
+  const pubs: Publication[] = [];
+  const nowStr = new Date().toISOString();
+  MOCK_PROJECTS.forEach((p) => {
+    pubs.push({
+      id: createId(),
+      projectId: p.id,
+      publishId: `${p.id}-pubdefault`,
+      version: 1,
+      type: 'web',
+      url: typeof window !== 'undefined' ? `${window.location.origin}/view/${p.id}-pubdefault` : `/view/${p.id}-pubdefault`,
+      publishedAt: nowStr,
+      publishedBy: MOCK_USER.id,
+    });
+  });
+  return pubs;
 };
 
 export const useAppStore = create<AppState>()(
@@ -156,13 +195,16 @@ export const useAppStore = create<AppState>()(
       currentProjectId: null,
       dataSources: [],
       sections: [],
+      sectionsMap: {},
       templates: [],
       currentTheme: defaultTheme,
       selectedItem: { sectionId: null, chartId: null },
       loading: false,
 
       saveStatus: 'idle',
+      saveStatusMap: {},
       lastSavedAt: null,
+      lastSavedAtMap: {},
 
       collaborators: [],
       publications: [],
@@ -173,30 +215,36 @@ export const useAppStore = create<AppState>()(
       },
 
       fetchProjects: async () => {
-        const { projects } = get();
-        if (projects.length > 0) {
-          set({ loading: false });
-          return;
+        const { projects, publications } = get();
+        if (projects.length === 0) {
+          set({ loading: true });
+          await delay(300);
+          set({ projects: [...MOCK_PROJECTS], loading: false });
         }
-        set({ loading: true });
-        await delay(300);
-        set({ projects: [...MOCK_PROJECTS], loading: false });
+        if (publications.length === 0) {
+          set({ publications: buildInitialPublications() });
+        }
       },
 
       addProject: async (project) => {
         set({ loading: true });
         await delay(300);
+        const newProjectId = createId();
         const newProject: Project = {
           ...project,
-          id: createId(),
+          id: newProjectId,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
         set((state) => ({
           projects: [...state.projects, newProject],
+          sectionsMap: {
+            ...state.sectionsMap,
+            [newProjectId]: buildDefaultSections(newProjectId),
+          },
           loading: false,
         }));
-        triggerSave(set);
+        triggerSave(set, get);
         return newProject;
       },
 
@@ -209,54 +257,72 @@ export const useAppStore = create<AppState>()(
           ),
           loading: false,
         }));
-        triggerSave(set);
+        triggerSave(set, get);
       },
 
       deleteProject: async (id) => {
         set({ loading: true });
         await delay(300);
-        set((state) => ({
-          projects: state.projects.filter((p) => p.id !== id),
-          currentProjectId: state.currentProjectId === id ? null : state.currentProjectId,
-          sections: state.currentProjectId === id ? [] : state.sections,
-          dataSources: state.dataSources.filter((ds) => ds.projectId !== id),
-          collaborators: state.collaborators.filter((c) => c.projectId !== id),
-          publications: state.publications.filter((p) => p.projectId !== id),
-          loading: false,
-        }));
-        triggerSave(set);
+        set((state) => {
+          const nextSectionsMap = { ...state.sectionsMap };
+          delete nextSectionsMap[id];
+          const nextSaveStatusMap = { ...state.saveStatusMap };
+          delete nextSaveStatusMap[id];
+          const nextLastSavedAtMap = { ...state.lastSavedAtMap };
+          delete nextLastSavedAtMap[id];
+          return {
+            projects: state.projects.filter((p) => p.id !== id),
+            currentProjectId: state.currentProjectId === id ? null : state.currentProjectId,
+            sections: state.currentProjectId === id ? [] : state.sections,
+            sectionsMap: nextSectionsMap,
+            saveStatusMap: nextSaveStatusMap,
+            lastSavedAtMap: nextLastSavedAtMap,
+            dataSources: state.dataSources.filter((ds) => ds.projectId !== id),
+            collaborators: state.collaborators.filter((c) => c.projectId !== id),
+            publications: state.publications.filter((p) => p.projectId !== id),
+            loading: false,
+          };
+        });
+        triggerSave(set, get);
       },
 
       setCurrentProject: async (projectId) => {
         set({ loading: true, currentProjectId: projectId });
         if (projectId) {
-          const { sections, dataSources, collaborators, publications } = get();
-          const hasProjectSections = sections.length > 0;
+          const { sectionsMap, dataSources, collaborators, publications } = get();
+          // 从 sectionsMap 取该项目的数据，若无则初始化
+          let projectSections = sectionsMap[projectId];
+          if (!projectSections) {
+            projectSections = buildDefaultSections(projectId);
+            set({
+              sectionsMap: { ...sectionsMap, [projectId]: projectSections },
+            });
+          }
+          set({ sections: projectSections });
           const hasProjectData = dataSources.some((ds) => ds.projectId === projectId);
           const hasCollabs = collaborators.some((c) => c.projectId === projectId);
-          const hasPubs = publications.some((p) => p.projectId === projectId);
-
-          if (!hasProjectSections) {
-            await get().fetchSections();
-          }
           if (!hasProjectData) {
             await get().fetchDataSources();
           }
           if (!hasCollabs) {
             await get().fetchCollaborators();
           }
-          if (!hasPubs) {
-            await get().fetchPublications();
+          if (publications.length === 0) {
+            set({ publications: buildInitialPublications() });
           }
-
-          const { lastSavedAt } = get();
-          if (lastSavedAt) {
-            set({ saveStatus: 'saved', loading: false });
+          // 恢复当前项目的保存状态
+          const { saveStatusMap, lastSavedAtMap } = get();
+          const projSaveStatus = saveStatusMap[projectId] || 'idle';
+          const projLastSavedAt = lastSavedAtMap[projectId] ? new Date(lastSavedAtMap[projectId]) : null;
+          if (projLastSavedAt) {
+            set({ saveStatus: 'saved', lastSavedAt: projLastSavedAt, loading: false });
+          } else if (projSaveStatus !== 'idle') {
+            set({ saveStatus: projSaveStatus, loading: false });
           } else {
             set({ loading: false });
           }
         } else {
-          set({ loading: false });
+          set({ sections: [], saveStatus: 'idle', lastSavedAt: null, loading: false });
         }
       },
 
@@ -271,7 +337,7 @@ export const useAppStore = create<AppState>()(
         set({ loading: true });
         await delay(300);
         set({
-          dataSources: MOCK_DATA_SOURCES.filter((ds) => ds.projectId === currentProjectId),
+          dataSources: [...dataSources, ...MOCK_DATA_SOURCES.filter((ds) => ds.projectId === currentProjectId)],
           loading: false,
         });
       },
@@ -288,7 +354,7 @@ export const useAppStore = create<AppState>()(
           dataSources: [...state.dataSources, newDataSource],
           loading: false,
         }));
-        triggerSave(set);
+        triggerSave(set, get);
         return newDataSource;
       },
 
@@ -301,7 +367,7 @@ export const useAppStore = create<AppState>()(
           ),
           loading: false,
         }));
-        triggerSave(set);
+        triggerSave(set, get);
       },
 
       deleteDataSource: async (id) => {
@@ -311,7 +377,7 @@ export const useAppStore = create<AppState>()(
           dataSources: state.dataSources.filter((ds) => ds.id !== id),
           loading: false,
         }));
-        triggerSave(set);
+        triggerSave(set, get);
       },
 
       editDataSourceFields: async (dataSourceId, fieldsUpdates) => {
@@ -328,100 +394,139 @@ export const useAppStore = create<AppState>()(
           }),
           loading: false,
         }));
-        triggerSave(set);
+        triggerSave(set, get);
       },
 
       fetchSections: async () => {
-        const { currentProjectId, sections } = get();
+        const { currentProjectId, sectionsMap } = get();
         if (!currentProjectId) return;
-        if (sections.length > 0) {
-          set({ loading: false });
+        if (sectionsMap[currentProjectId] && sectionsMap[currentProjectId].length > 0) {
+          set({ sections: sectionsMap[currentProjectId], loading: false });
           return;
         }
         set({ loading: true });
         await delay(300);
+        const defaultSections = buildDefaultSections(currentProjectId);
         set({
-          sections: buildDefaultSections(currentProjectId),
+          sections: defaultSections,
+          sectionsMap: { ...sectionsMap, [currentProjectId]: defaultSections },
           loading: false,
         });
       },
 
       addSection: async (section) => {
+        const { currentProjectId } = get();
         set({ loading: true });
         await delay(300);
         const newSection: PageSection = {
           ...section,
           id: createId(),
         };
-        set((state) => ({
-          sections: [...state.sections, newSection],
-          loading: false,
-        }));
-        triggerSave(set);
+        set((state) => {
+          const nextSections = [...state.sections, newSection];
+          const nextMap = currentProjectId
+            ? { ...state.sectionsMap, [currentProjectId]: nextSections }
+            : state.sectionsMap;
+          return {
+            sections: nextSections,
+            sectionsMap: nextMap,
+            loading: false,
+          };
+        });
+        triggerSave(set, get);
         return newSection;
       },
 
       updateSection: async (id, updates) => {
+        const { currentProjectId } = get();
         set({ loading: true });
         await delay(300);
-        set((state) => ({
-          sections: state.sections.map((s) =>
+        set((state) => {
+          const nextSections = state.sections.map((s) =>
             s.id === id ? { ...s, ...updates } : s
-          ),
-          loading: false,
-        }));
-        triggerSave(set);
+          );
+          const nextMap = currentProjectId
+            ? { ...state.sectionsMap, [currentProjectId]: nextSections }
+            : state.sectionsMap;
+          return {
+            sections: nextSections,
+            sectionsMap: nextMap,
+            loading: false,
+          };
+        });
+        triggerSave(set, get);
       },
 
       deleteSection: async (id) => {
+        const { currentProjectId } = get();
         set({ loading: true });
         await delay(300);
-        set((state) => ({
-          sections: state.sections.filter((s) => s.id !== id),
-          selectedItem:
-            state.selectedItem.sectionId === id
-              ? { sectionId: null, chartId: null }
-              : state.selectedItem,
-          loading: false,
-        }));
-        triggerSave(set);
+        set((state) => {
+          const nextSections = state.sections.filter((s) => s.id !== id);
+          const nextMap = currentProjectId
+            ? { ...state.sectionsMap, [currentProjectId]: nextSections }
+            : state.sectionsMap;
+          return {
+            sections: nextSections,
+            sectionsMap: nextMap,
+            selectedItem:
+              state.selectedItem.sectionId === id
+                ? { sectionId: null, chartId: null }
+                : state.selectedItem,
+            loading: false,
+          };
+        });
+        triggerSave(set, get);
       },
 
       reorderSections: async (startIndex, endIndex) => {
+        const { currentProjectId } = get();
         set({ loading: true });
         await delay(200);
         set((state) => {
           const result = Array.from(state.sections);
           const [removed] = result.splice(startIndex, 1);
           result.splice(endIndex, 0, removed);
-          return { sections: result, loading: false };
+          const nextMap = currentProjectId
+            ? { ...state.sectionsMap, [currentProjectId]: result }
+            : state.sectionsMap;
+          return { sections: result, sectionsMap: nextMap, loading: false };
         });
-        triggerSave(set);
+        triggerSave(set, get);
       },
 
       addChart: async (sectionId, chart) => {
+        const { currentProjectId } = get();
         set({ loading: true });
         await delay(300);
         const newChart: ChartConfig = {
           ...chart,
           id: createId(),
         };
-        set((state) => ({
-          sections: state.sections.map((s) =>
+        set((state) => {
+          const nextSections = state.sections.map((s) =>
             s.id === sectionId
               ? { ...s, charts: [...(s.charts || []), newChart] }
               : s
-          ),
-          loading: false,
-        }));
-        triggerSave(set);
+          );
+          const nextMap = currentProjectId
+            ? { ...state.sectionsMap, [currentProjectId]: nextSections }
+            : state.sectionsMap;
+          return {
+            sections: nextSections,
+            sectionsMap: nextMap,
+            loading: false,
+          };
+        });
+        triggerSave(set, get);
       },
 
       updateChart: async (sectionId, chartId, updates) => {
+        const { currentProjectId } = get();
         set({ loading: true });
         await delay(300);
-        set((state) => ({
-          sections: state.sections.map((s) =>
+        set((state) => {
+          const nextSections = state.sections.map((s) =>
             s.id === sectionId
               ? {
                   ...s,
@@ -430,31 +535,51 @@ export const useAppStore = create<AppState>()(
                   ),
                 }
               : s
-          ),
-          loading: false,
-        }));
-        triggerSave(set);
+          );
+          const nextMap = currentProjectId
+            ? { ...state.sectionsMap, [currentProjectId]: nextSections }
+            : state.sectionsMap;
+          return {
+            sections: nextSections,
+            sectionsMap: nextMap,
+            loading: false,
+          };
+        });
+        triggerSave(set, get);
       },
 
       deleteChart: async (sectionId, chartId) => {
+        const { currentProjectId } = get();
         set({ loading: true });
         await delay(300);
-        set((state) => ({
-          sections: state.sections.map((s) =>
+        set((state) => {
+          const nextSections = state.sections.map((s) =>
             s.id === sectionId
               ? { ...s, charts: (s.charts || []).filter((c) => c.id !== chartId) }
               : s
-          ),
-          selectedItem:
-            state.selectedItem.chartId === chartId
-              ? { sectionId: null, chartId: null }
-              : state.selectedItem,
-          loading: false,
-        }));
-        triggerSave(set);
+          );
+          const nextMap = currentProjectId
+            ? { ...state.sectionsMap, [currentProjectId]: nextSections }
+            : state.sectionsMap;
+          return {
+            sections: nextSections,
+            sectionsMap: nextMap,
+            selectedItem:
+              state.selectedItem.chartId === chartId
+                ? { sectionId: null, chartId: null }
+                : state.selectedItem,
+            loading: false,
+          };
+        });
+        triggerSave(set, get);
       },
 
       fetchTemplates: async () => {
+        const { templates } = get();
+        if (templates.length > 0) {
+          set({ loading: false });
+          return;
+        }
         set({ loading: true });
         await delay(300);
         set({ templates: [...MOCK_TEMPLATES], loading: false });
@@ -464,7 +589,7 @@ export const useAppStore = create<AppState>()(
         set({ loading: true });
         await delay(200);
         set({ currentTheme: theme, loading: false });
-        triggerSave(set);
+        triggerSave(set, get);
       },
 
       setSelectedItem: (selected) => {
@@ -499,13 +624,13 @@ export const useAppStore = create<AppState>()(
 
       canPublish: () => {
         const role = get().getCurrentUserRole();
-        const allowedRoles: (UserRole | 'owner')[] = ['owner', 'admin', 'editor'];
+        const allowedRoles: (UserRole | 'owner')[] = ['owner', 'admin', 'data_manager', 'editor'];
         return allowedRoles.includes(role);
       },
 
       canManageCollaborators: () => {
         const role = get().getCurrentUserRole();
-        const allowedRoles: (UserRole | 'owner')[] = ['owner', 'admin'];
+        const allowedRoles: (UserRole | 'owner')[] = ['owner', 'admin', 'data_manager'];
         return allowedRoles.includes(role);
       },
 
@@ -583,7 +708,7 @@ export const useAppStore = create<AppState>()(
           collaborators: [...state.collaborators, newCollaborator],
           loading: false,
         }));
-        triggerSave(set);
+        triggerSave(set, get);
       },
 
       updateCollaboratorRole: async (userId, role) => {
@@ -597,7 +722,7 @@ export const useAppStore = create<AppState>()(
           ),
           loading: false,
         }));
-        triggerSave(set);
+        triggerSave(set, get);
       },
 
       removeCollaborator: async (userId) => {
@@ -611,13 +736,18 @@ export const useAppStore = create<AppState>()(
           ),
           loading: false,
         }));
-        triggerSave(set);
+        triggerSave(set, get);
       },
 
       fetchPublications: async () => {
+        const { publications } = get();
+        if (publications.length > 0) {
+          set({ loading: false });
+          return;
+        }
         set({ loading: true });
         await delay(300);
-        set({ loading: false });
+        set({ publications: buildInitialPublications(), loading: false });
       },
 
       publishWeb: async (projectId, options) => {
@@ -653,7 +783,7 @@ export const useAppStore = create<AppState>()(
           ),
           loading: false,
         }));
-        triggerSave(set);
+        triggerSave(set, get);
         return newPublication;
       },
 
@@ -680,26 +810,34 @@ export const useAppStore = create<AppState>()(
           publications: [...state.publications, newPublication],
           loading: false,
         }));
-        triggerSave(set);
+        triggerSave(set, get);
         return newPublication;
       },
 
       triggerManualSave: () => {
+        const { currentProjectId, saveStatusMap, lastSavedAtMap } = get();
+        if (!currentProjectId) return;
         const now = new Date();
-        set({ saveStatus: 'saved', lastSavedAt: now });
+        const nowStr = now.toISOString();
+        set({
+          saveStatus: 'saved',
+          lastSavedAt: now,
+          saveStatusMap: { ...saveStatusMap, [currentProjectId]: 'saved' },
+          lastSavedAtMap: { ...lastSavedAtMap, [currentProjectId]: nowStr },
+        });
       },
 
       getProjectSections: (projectId: string) => {
-        const { sections, projects } = get();
-        const project = projects.find((p) => p.id === projectId);
-        if (!project) return [];
-        return sections;
+        const { sectionsMap } = get();
+        return sectionsMap[projectId] || [];
       },
 
       getProjectDataSources: (projectId: string) => {
         const { dataSources } = get();
         return dataSources.filter((ds) => ds.projectId === projectId);
       },
+
+      extractProjectIdFromPublishId,
     }),
     {
       name: 'annual-report-app-state',
@@ -708,13 +846,13 @@ export const useAppStore = create<AppState>()(
         projects: state.projects,
         currentProjectId: state.currentProjectId,
         dataSources: state.dataSources,
-        sections: state.sections,
+        sectionsMap: state.sectionsMap,
+        saveStatusMap: state.saveStatusMap,
+        lastSavedAtMap: state.lastSavedAtMap,
         templates: state.templates,
         currentTheme: state.currentTheme,
         collaborators: state.collaborators,
         publications: state.publications,
-        lastSavedAt: state.lastSavedAt,
-        saveStatus: state.saveStatus === 'saved' ? 'saved' : 'idle',
       }),
     }
   )

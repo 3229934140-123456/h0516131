@@ -45,15 +45,17 @@ const sectionTypeConfig = {
   divider: { icon: Minus, label: "分隔" },
 };
 
-const formatSaveTime = (date: Date | null): string => {
+const formatSaveTime = (date: Date | string | null): string => {
   if (!date) return "";
-  const diffMs = Date.now() - date.getTime();
+  const d = typeof date === "string" ? new Date(date) : date;
+  if (isNaN(d.getTime())) return "";
+  const diffMs = Date.now() - d.getTime();
   const diffMin = Math.floor(diffMs / 60000);
   if (diffMin < 1) return "刚刚保存";
   if (diffMin < 60) return `${diffMin}分钟前保存`;
   const diffHour = Math.floor(diffMin / 60);
   if (diffHour < 24) return `${diffHour}小时前保存`;
-  return date.toLocaleDateString("zh-CN");
+  return d.toLocaleDateString("zh-CN");
 };
 
 const SwitchToggle: React.FC<{
