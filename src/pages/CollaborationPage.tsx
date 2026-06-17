@@ -1,0 +1,459 @@
+import { useState } from "react";
+import { Link, useParams } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  ChevronLeft,
+  Users,
+  Plus,
+  Search,
+  MoreHorizontal,
+  Copy,
+  Mail,
+  Crown,
+  Shield,
+  Edit3,
+  Eye,
+  UserPlus,
+  Check,
+  X,
+  Trash2,
+  ArrowRight,
+  Clock,
+} from "lucide-react";
+import { MOCK_PROJECTS, MOCK_USER, MOCK_COLLABORATORS } from "@shared/mockData";
+import type { UserRole } from "@shared/types";
+
+const roleConfig: Record<UserRole | "owner", { label: string; color: string; icon: any; desc: string }> = {
+  owner: { label: "所有者", color: "bg-purple-100 text-purple-700", icon: Crown, desc: "拥有项目的全部权限" },
+  admin: { label: "管理员", color: "bg-purple-100 text-purple-700", icon: Shield, desc: "可管理所有设置和成员" },
+  data_manager: { label: "数据管理员", color: "bg-blue-100 text-blue-700", icon: Shield, desc: "可导入和管理数据" },
+  editor: { label: "内容编辑者", color: "bg-amber-100 text-amber-700", icon: Edit3, desc: "可编辑年报内容" },
+  viewer: { label: "查看者", color: "bg-gray-100 text-gray-700", icon: Eye, desc: "仅可查看内容" },
+};
+
+function CollaboratorCard({ user, role: userRole, isOwner }: { user: typeof MOCK_COLLABORATORS[0]; role: UserRole; isOwner?: boolean }) {
+  const [showRoleMenu, setShowRoleMenu] = useState(false);
+  const effectiveRole = isOwner ? "owner" : userRole;
+  const roleInfo = roleConfig[effectiveRole];
+  const RoleIcon = roleInfo.icon;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="group p-5 bg-white rounded-2xl border border-gray-100 hover:border-deep-blue/20 hover:shadow-xl transition-all duration-300"
+    >
+      <div className="flex items-start gap-4">
+        <div className="relative">
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-deep-blue to-deep-blue-light flex items-center justify-center text-white font-bold text-lg shadow-md">
+            {user.name.charAt(0)}
+          </div>
+          {isOwner && (
+            <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-lg bg-gold flex items-center justify-center shadow-md border-2 border-white">
+              <Crown className="w-3.5 h-3.5 text-deep-blue" />
+            </div>
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h4 className="font-bold text-gray-900 text-lg truncate">{user.name}</h4>
+              <p className="text-sm text-gray-500 truncate mt-0.5">{user.email}</p>
+            </div>
+            <div className="relative">
+              <button
+                onClick={() => setShowRoleMenu(!showRoleMenu)}
+                className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-deep-blue transition-colors"
+              >
+                <MoreHorizontal className="w-5 h-5" />
+              </button>
+              <AnimatePresence>
+                {showRoleMenu && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -8, scale: 0.95 }}
+                    className="absolute right-0 top-full mt-1 w-48 bg-white rounded-xl shadow-xl border border-gray-100 py-2 z-20"
+                  >
+                    {!isOwner &&
+                      (["data_manager", "editor", "viewer"] as UserRole[]).map((r) => {
+                        const RoleIconItem = roleConfig[r].icon;
+                        return (
+                          <button
+                            key={r}
+                            onClick={() => setShowRoleMenu(false)}
+                            className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-gray-50 transition-colors ${
+                              r === userRole ? "text-deep-blue bg-deep-blue/5" : "text-gray-700"
+                            }`}
+                          >
+                            <RoleIconItem className="w-4 h-4" />
+                            {roleConfig[r].label}
+                            {r === userRole && <Check className="w-4 h-4 ml-auto text-gold" />}
+                          </button>
+                        );
+                      })}
+                    {!isOwner && <div className="h-px bg-gray-100 my-1" />}
+                    {!isOwner && (
+                      <button className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors">
+                        <Trash2 className="w-4 h-4" />
+                        移除协作者
+                      </button>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
+
+          <div className="mt-3 flex items-center justify-between">
+            <div
+              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold ${roleInfo.color}`}
+            >
+              <RoleIcon className="w-3.5 h-3.5" />
+              {roleInfo.label}
+            </div>
+            <p className="text-xs text-gray-400 flex items-center gap-1">
+              <Clock className="w-3 h-3" />
+              加入于 2024-12-15
+            </p>
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+export default function CollaborationPage() {
+  const { id } = useParams();
+  const project = MOCK_PROJECTS.find((p) => p.id === id) || MOCK_PROJECTS[0];
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<UserRole>("editor");
+
+  const collaborators = [
+    { ...MOCK_USER, isOwner: true },
+    ...MOCK_COLLABORATORS.map((u) => ({ ...u, isOwner: false })),
+  ];
+
+  const filtered = collaborators.filter(
+    (u) =>
+      u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      u.email.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const roleCounts = {
+    owner: 1,
+    data_manager: collaborators.filter((c) => c.role === "data_manager").length,
+    editor: collaborators.filter((c) => c.role === "editor").length,
+    viewer: collaborators.filter((c) => c.role === "viewer").length,
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-deep-blue/5">
+      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-100">
+        <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <Link
+              to={`/projects/${id}/editor`}
+              className="w-10 h-10 rounded-xl hover:bg-gray-100 flex items-center justify-center text-gray-600 transition-colors"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </Link>
+            <div className="w-px h-8 bg-gray-200" />
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center">
+                <Users className="w-4.5 h-4.5 text-white" />
+              </div>
+              <div>
+                <h1 className="font-bold text-gray-900 text-lg leading-tight">协作管理</h1>
+                <p className="text-xs text-gray-500 leading-tight">{project?.name}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowInviteModal(true)}
+              className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-deep-blue to-deep-blue-light hover:shadow-lg hover:shadow-deep-blue/30 transition-all"
+            >
+              <UserPlus className="w-4 h-4" />
+              邀请协作者
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-5xl mx-auto px-6 py-10">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
+          {(
+            [
+              { key: "owner", total: collaborators.length, label: "团队总人数" },
+              { key: "data_manager", total: roleCounts.data_manager, label: "数据管理员" },
+              { key: "editor", total: roleCounts.editor, label: "内容编辑者" },
+              { key: "viewer", total: roleCounts.viewer, label: "查看者" },
+            ] as const
+          ).map((item, idx) => {
+            const cfg = roleConfig[item.key];
+            const Icon = cfg.icon;
+            return (
+              <motion.div
+                key={item.key}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: idx * 0.05 }}
+                className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-lg transition-all"
+              >
+                <div className="flex items-start justify-between mb-4">
+                  <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${cfg.color.split(" ")[0]}`}>
+                    <Icon className="w-5.5 h-5.5" />
+                  </div>
+                  <p className="text-3xl font-bold text-gray-900">{item.total}</p>
+                </div>
+                <p className="text-sm text-gray-500">{item.label}</p>
+              </motion.div>
+            );
+          })}
+        </div>
+
+        <div className="bg-gradient-to-r from-gold/10 via-amber-50 to-gold/10 rounded-3xl p-8 mb-10 border border-gold/20 relative overflow-hidden">
+          <div className="absolute -top-20 -right-20 w-60 h-60 rounded-full bg-gold/10 blur-3xl" />
+          <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+            <div className="flex items-start gap-5">
+              <div className="w-16 h-16 rounded-2xl bg-white flex items-center justify-center shadow-md flex-shrink-0">
+                <Copy className="w-8 h-8 text-gold" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-gray-900 mb-2">分享协作链接</h3>
+                <p className="text-gray-600 max-w-lg leading-relaxed">
+                  通过链接邀请团队成员加入项目，您可以随时设置访问权限和角色
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 w-full md:w-auto">
+              <div className="flex-1 md:w-80 px-5 py-3 bg-white rounded-xl border border-gold/30 text-sm text-gray-700 truncate font-mono shadow-sm">
+                https://report.example.com/invite/abc123xyz
+              </div>
+              <button className="flex-shrink-0 flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold bg-gradient-to-r from-gold to-gold-light text-deep-blue hover:shadow-xl hover:shadow-gold/30 transition-all">
+                <Copy className="w-4 h-4" />
+                复制
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-10">
+          <div className="p-5 border-b border-gray-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <h3 className="font-bold text-gray-900 text-lg">团队成员 ({filtered.length})</h3>
+              <p className="text-sm text-gray-500 mt-0.5">管理项目的协作者及其权限</p>
+            </div>
+            <div className="relative w-full sm:w-72">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="搜索成员..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-gold/50 focus:border-gold transition-all"
+              />
+            </div>
+          </div>
+
+          <div className="p-5 grid gap-4">
+            {filtered.map((user, idx) => (
+              <CollaboratorCard
+                key={user.id}
+                user={user}
+                role={user.role as UserRole}
+                isOwner={user.isOwner}
+              />
+            ))}
+            {filtered.length === 0 && (
+              <div className="py-16 text-center">
+                <div className="w-20 h-20 mx-auto mb-5 rounded-3xl bg-gray-100 flex items-center justify-center">
+                  <Search className="w-10 h-10 text-gray-400" />
+                </div>
+                <h4 className="text-xl font-bold text-gray-900 mb-2">未找到匹配的成员</h4>
+                <p className="text-gray-500">尝试其他搜索关键词</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-br from-deep-blue via-deep-blue-light to-deep-blue-dark rounded-3xl p-8 md:p-10 relative overflow-hidden">
+          <div className="absolute inset-0 overflow-hidden">
+            <div className="absolute -bottom-24 -right-24 w-80 h-80 rounded-full bg-gold/15 blur-3xl" />
+            <div className="absolute -top-20 left-1/4 w-60 h-60 rounded-full bg-white/5 blur-3xl" />
+          </div>
+          <div className="relative z-10">
+            <h3 className="text-2xl md:text-3xl font-heading font-bold text-white mb-4">了解权限等级</h3>
+            <p className="text-white/70 mb-8 max-w-2xl leading-relaxed">
+              为不同角色的团队成员分配合适的权限，确保项目安全高效地协作
+            </p>
+            <div className="grid md:grid-cols-2 gap-5">
+              {(
+                [
+                  {
+                    role: "data_manager",
+                    features: ["导入和管理数据源", "配置字段映射", "创建和编辑内容", "查看分析数据"],
+                  },
+                  {
+                    role: "editor",
+                    features: ["编辑年报内容", "调整图表配置", "修改文字样式", "保存项目版本"],
+                  },
+                  {
+                    role: "viewer",
+                    features: ["浏览年报内容", "发表评论", "下载PDF文档", "查看历史版本"],
+                  },
+                  {
+                    role: "owner",
+                    features: ["全部操作权限", "管理团队成员", "发布和导出", "删除项目"],
+                  },
+                ] as const
+              ).map((item, idx) => {
+                const cfg = roleConfig[item.role];
+                const Icon = cfg.icon;
+                return (
+                  <motion.div
+                    key={item.role}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: idx * 0.08 }}
+                    className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/15 hover:bg-white/15 transition-colors"
+                  >
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-11 h-11 rounded-xl bg-gold/20 flex items-center justify-center">
+                        <Icon className="w-5.5 h-5.5 text-gold" />
+                      </div>
+                      <h4 className="text-lg font-bold text-white">{cfg.label}</h4>
+                    </div>
+                    <ul className="space-y-2.5">
+                      {item.features.map((f, i) => (
+                        <li key={i} className="flex items-center gap-2.5 text-white/80 text-sm">
+                          <div className="w-5 h-5 rounded-full bg-gold/25 flex items-center justify-center flex-shrink-0">
+                            <Check className="w-3 h-3 text-gold" strokeWidth={3} />
+                          </div>
+                          {f}
+                        </li>
+                      ))}
+                    </ul>
+                  </motion.div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <AnimatePresence>
+        {showInviteModal && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowInviteModal(false)}
+              className="fixed inset-0 bg-deep-blue/40 backdrop-blur-sm z-50"
+            />
+            <motion.div
+              initial={{ opacity: 0, y: 30, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 30, scale: 0.95 }}
+              transition={{ type: "spring", stiffness: 300, damping: 30 }}
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none"
+            >
+              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden pointer-events-auto">
+                <div className="p-8">
+                  <div className="flex items-start justify-between mb-6">
+                    <div>
+                      <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-deep-blue to-deep-blue-light flex items-center justify-center mb-5 shadow-lg shadow-deep-blue/20">
+                        <Mail className="w-7 h-7 text-gold" />
+                      </div>
+                      <h3 className="text-2xl font-bold text-gray-900 mb-2">邀请协作者</h3>
+                      <p className="text-gray-500">通过邮箱邀请团队成员加入项目</p>
+                    </div>
+                    <button
+                      onClick={() => setShowInviteModal(false)}
+                      className="w-10 h-10 rounded-xl hover:bg-gray-100 flex items-center justify-center text-gray-400 hover:text-gray-600 transition-colors"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  <div className="space-y-5">
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2.5">邮箱地址</label>
+                      <input
+                        type="email"
+                        value={inviteEmail}
+                        onChange={(e) => setInviteEmail(e.target.value)}
+                        placeholder="name@company.com"
+                        className="w-full px-5 py-3.5 bg-gray-50 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-gold/50 focus:border-gold transition-all"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-3">选择角色</label>
+                      <div className="space-y-2.5">
+                        {(["data_manager", "editor", "viewer"] as UserRole[]).map((r) => {
+                          const cfg = roleConfig[r];
+                          const Icon = cfg.icon;
+                          const isActive = inviteRole === r;
+                          return (
+                            <button
+                              key={r}
+                              onClick={() => setInviteRole(r)}
+                              className={`w-full flex items-center gap-4 p-4 rounded-xl text-left transition-all ${
+                                isActive
+                                  ? "bg-deep-blue/5 border-2 border-deep-blue"
+                                  : "bg-gray-50 border-2 border-transparent hover:border-gray-200"
+                              }`}
+                            >
+                              <div
+                                className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${cfg.color}`}
+                              >
+                                <Icon className="w-5 h-5" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="font-semibold text-gray-900">{cfg.label}</p>
+                                <p className="text-xs text-gray-500 mt-0.5">{cfg.desc}</p>
+                              </div>
+                              <div
+                                className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${
+                                  isActive ? "border-deep-blue bg-deep-blue" : "border-gray-300"
+                                }`}
+                              >
+                                {isActive && <Check className="w-3.5 h-3.5 text-white" strokeWidth={3} />}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 mt-8">
+                    <button
+                      onClick={() => setShowInviteModal(false)}
+                      className="flex-1 py-3.5 rounded-xl text-base font-semibold border border-gray-200 text-gray-700 hover:border-deep-blue/30 hover:text-deep-blue transition-all"
+                    >
+                      取消
+                    </button>
+                    <button
+                      onClick={() => setShowInviteModal(false)}
+                      className="flex-1 py-3.5 rounded-xl text-base font-semibold bg-gradient-to-r from-deep-blue to-deep-blue-light text-white hover:shadow-lg hover:shadow-deep-blue/30 transition-all flex items-center justify-center gap-2"
+                    >
+                      <Mail className="w-4.5 h-4.5" />
+                      发送邀请
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
